@@ -20,8 +20,6 @@ livelossplot = "^0.2.2"
 
 [tool.poetry.dev-dependencies]
 pytest = "^4.0"
-nbstripout = "^0.3.3"
-nbdime = "^1.0"
 
 [build-system]
 requires = ["poetry>=0.12"]
