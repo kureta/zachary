@@ -13,5 +13,5 @@ def initialize_model(model):
                 pass
 
         elif 'BatchNorm' in classname:
-            nn.init.normal_(m.weight, mean=0, std=0.02)
-            nn.init.normal_(m.bias, mean=0, std=0.001)
+            nn.init.normal_(m.weight, mean=1.0, std=0.02)
+            nn.init.normal_(m.bias, mean=0., std=0.001)

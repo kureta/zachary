@@ -49,7 +49,7 @@ def load_file(path):
 
 class MagPhaseSTFT(Dataset):
     def __init__(self, file_paths=None, example_length=3, transform=None, target_transform=None):
-        super(AudioDataset, self).__init__()
+        super(MagPhaseSTFT, self).__init__()
         self.transform = transform
         self.target_transform = target_transform
 
