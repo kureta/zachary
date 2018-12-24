@@ -7,7 +7,7 @@ from torch.utils.data import Dataset
 import numpy as np
 
 from librosa import load
-from librosa import stft
+from librosa import stft, istft
 from librosa.effects import trim
 from librosa.util import normalize
 
@@ -36,6 +36,10 @@ def complex_stft(x):
 
     # dims = (channels, duration, mag/phase)
     return np.concatenate((np.expand_dims(magnitude, 2), np.expand_dims(phase, 2)), axis=2)
+
+
+def istft_(x):
+    return istft(x[:, :, 0] * np.exp(1j * x[:, :, 1]), hop_length=512, win_length=1024, center=False)
 
 
 def load_file(path):
