@@ -30,10 +30,12 @@ def recursive_file_paths(directory):
 
 
 def complex_stft(x):
-    c_stft = stft(x, n_fft=1024, hop_length=512, center=False, pad_mode='none')
-    real = c_stft.real
-    imaginary = c_stft.imag
-    return np.concatenate((real, imaginary))
+    c_stft = stft(x, n_fft=FRAME_LENGTH, hop_length=HOP_LENGTH, center=False, pad_mode='none')
+    magnitude = np.abs(c_stft)
+    phase = np.angle(c_stft)
+
+    # dims = (channels, duration, mag/phase)
+    return np.concatenate((np.expand_dims(magnitude, 2), np.expand_dims(phase, 2)), axis=2)
 
 
 def load_file(path):
@@ -41,13 +43,12 @@ def load_file(path):
     audio, _ = trim(audio, top_db=40, ref=np.max, frame_length=FRAME_LENGTH, hop_length=HOP_LENGTH)
     audio = normalize(audio)
     audio = complex_stft(audio)
-    audio = audio / np.abs(audio).max()
 
     return audio
 
 
-class AudioDataset(Dataset):
-    def __init__(self, file_paths=None, example_length=3, transform=None, target_transform=None, pre_process=None):
+class MagPhaseSTFT(Dataset):
+    def __init__(self, file_paths=None, example_length=3, transform=None, target_transform=None):
         super(AudioDataset, self).__init__()
         self.transform = transform
         self.target_transform = target_transform
@@ -57,19 +58,24 @@ class AudioDataset(Dataset):
         with Pool(8) as p:
             results = list(p.map(load_file, file_paths))
 
+        # dims = (channels, duration, mag/phase)
         self.audio = torch.from_numpy(np.concatenate(results, 1))
-
-        if pre_process is not None:
-            self.audio = pre_process(self.audio)
+        self.mins = self.audio.min(dim=1, keepdim=True)[0]
+        self.maxes = self.audio.max(dim=1, keepdim=True)[0]
+        self.audio = (self.audio - self.mins) / (self.maxes - self.mins)
 
         self.example_length = example_length
+
+    def denormalize(self, x):
+        return x * (self.maxes - self.mins) + self.mins
 
     def update_strided_views(self):
         self.num_frames = self.audio.shape[1]
         self.num_examples = self.num_frames - self.example_length + 1
-        self.examples = torch.as_strided(self.audio,
-                                         (self.num_examples, 1026, self.example_length),
-                                         (1026, 1, 1026))
+
+        strides = self.audio.stride()
+        self.examples = self.audio.as_strided((self.num_examples, HOP_LENGTH + 1, self.example_length, 2),
+                                              (strides[1], strides[0], strides[1], strides[2]))
 
     @property
     def example_length(self):
