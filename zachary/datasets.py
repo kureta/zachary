@@ -8,10 +8,10 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset
 
-DEFAULT_DIR = '/home/kureta/Music/Billboard Hot 100 Singles Charts/' \
-              'Billboard Hot 100 Singles Chart (03.03.2018) Mp3 (320kbps) ' \
-              '[Hunter]/Billboard Hot 100 Singles Chart (03.03.2018)'
-# DEFAULT_DIR = '/home/kureta/Music/misc/'
+# DEFAULT_DIR = '/home/kureta/Music/Billboard Hot 100 Singles Charts/' \
+#               'Billboard Hot 100 Singles Chart (03.03.2018) Mp3 (320kbps) ' \
+#               '[Hunter]/Billboard Hot 100 Singles Chart (03.03.2018)'
+DEFAULT_DIR = '/home/kureta/Music/misc/'
 # DEFAULT_DIR = '/home/kureta/Music/bach complete/Bach 2000 v01CD01 (Cantatas BWV 01-03)/'
 FRAME_LENGTH = 1024
 HOP_LENGTH = 512
@@ -67,3 +67,51 @@ class AtemporalDataset(Dataset):
 
     def __getitem__(self, index):
         return self.spectra[index]
+
+
+class GANDataset(Dataset):
+    def __init__(self, atemporal_dataset, encoder, example_length=64, stft_hop_length=32):
+        super(GANDataset, self).__init__()
+
+        self._example_length = example_length
+        self._stft_hop_length = stft_hop_length
+
+        self.spectra = atemporal_dataset.spectra
+        self.encoder = encoder
+        self.absoulte_examples = None
+        self.update_strided()
+
+    def update_strided(self):
+        stride = self.spectra.stride()
+        shape = self.spectra.shape
+        n_examples = (shape[0] - self.example_length) // self.stft_hop_length + 1
+        self.absoulte_examples = self.spectra.as_strided(
+            (n_examples, shape[1], self.example_length),
+            (stride[0] * self.stft_hop_length, stride[1], stride[0]))
+
+    @property
+    def example_length(self):
+        return self._example_length
+
+    @example_length.setter
+    def example_length(self, value):
+        self._example_length = value
+        self.update_strided()
+
+    @property
+    def stft_hop_length(self):
+        return self._stft_hop_length
+
+    @stft_hop_length.setter
+    def stft_hop_length(self, value):
+        self._stft_hop_length = value
+        self.update_strided()
+
+    def __len__(self):
+        return self.absoulte_examples.shape[0]
+
+    def __getitem__(self, index):
+        self.encoder.eval()
+        with torch.no_grad():
+            x = self.encoder(self.absoulte_examples[index].transpose(0, 1)).transpose(0, 1)
+        return x
