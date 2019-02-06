@@ -5,14 +5,16 @@ import librosa
 import librosa.effects
 import librosa.util
 import numpy as np
+from scipy.signal import find_peaks
+from itertools import combinations
 import torch
 from torch.utils.data import Dataset
 
 # DEFAULT_DIR = '/home/kureta/Music/Billboard Hot 100 Singles Charts/' \
 #               'Billboard Hot 100 Singles Chart (03.03.2018) Mp3 (320kbps) ' \
 #               '[Hunter]/Billboard Hot 100 Singles Chart (03.03.2018)'
-DEFAULT_DIR = '/home/kureta/Music/misc/'
-# DEFAULT_DIR = '/home/kureta/Music/bach complete/Bach 2000 v01CD01 (Cantatas BWV 01-03)/'
+# DEFAULT_DIR = '/home/kureta/Music/misc/'
+DEFAULT_DIR = '/home/kureta/Music/bach complete/Bach 2000 v01CD01 (Cantatas BWV 01-03)/'
 FRAME_LENGTH = 1024
 HOP_LENGTH = 512
 
@@ -32,6 +34,39 @@ def load_audio_file(path, sr=44100, mono=True):
 
 def get_stft(audio):
     return librosa.stft(audio, n_fft=FRAME_LENGTH, hop_length=HOP_LENGTH)
+
+
+def f0_from_stft_frame(frame):
+    height = frame.mean()
+    peak_bins = find_peaks(frame, height=height)[0]
+    peak_freqs = librosa.fft_frequencies(44100, 1024)[peak_bins].astype('float32')
+
+    diffs = [abs(a - b) for a, b in combinations(peak_freqs, 2)]
+    diffs = [d for d in diffs if librosa.midi_to_hz(21) < d < librosa.midi_to_hz(108)]
+
+    hist_diffs = np.histogram(diffs, bins=97)
+
+    f0 = hist_diffs[1][hist_diffs[0].argmax()]
+    confidence = hist_diffs[0].max() / hist_diffs[0].sum()
+    return f0, confidence
+
+
+def __pseudo_one_hot(values, size=128):
+    values = torch.clamp(values, 0, size - 1)
+    one_hot = torch.zeros(values.shape[0], size)
+    one_hot[range(values.shape[0]), torch.floor(values).long()] = 1 - (values - torch.floor(values))
+    one_hot[range(values.shape[0]), torch.ceil(values).long()] = 1 - (torch.ceil(values) - values)
+
+    return one_hot
+
+
+def pseudo_one_hot(value, size=128):
+    value = torch.clamp(torch.tensor(value), 0, size - 1)
+    one_hot = torch.zeros(size)
+    one_hot[torch.floor(value).long()] = 1 - (value - torch.floor(value))
+    one_hot[torch.ceil(value).long()] = 1 - (torch.ceil(value) - value)
+
+    return one_hot
 
 
 def recursive_file_paths(directory):
@@ -66,7 +101,9 @@ class AtemporalDataset(Dataset):
         return self.spectra.shape[0]
 
     def __getitem__(self, index):
-        return self.spectra[index]
+        f0, confidence = f0_from_stft_frame(self.spectra[index].numpy())
+        f0 = librosa.hz_to_midi(f0)
+        return self.spectra[index], pseudo_one_hot(f0, 128)
 
 
 class GANDataset(Dataset):
@@ -111,7 +148,4 @@ class GANDataset(Dataset):
         return self.absoulte_examples.shape[0]
 
     def __getitem__(self, index):
-        self.encoder.eval()
-        with torch.no_grad():
-            x = self.encoder(self.absoulte_examples[index].transpose(0, 1)).transpose(0, 1)
-        return x
+        return self.absoulte_examples[index]
