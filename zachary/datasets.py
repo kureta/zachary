@@ -20,14 +20,19 @@ def do_multiprocess(function, args_list, num_processes=8):
 
 
 def recursive_file_paths(directory):
+    supported_extensions = ['.mp3', '.wav', '.flac']
     file_paths = []
     for dirname, dirnames, filenames in os.walk(directory):
         # print path to all filenames.
         for filename in filenames:
-            if filename.endswith(".mp3"):
+            if os.path.splitext(filename)[1].lower() in supported_extensions:
                 file_paths.append(os.path.join(dirname, filename))
 
     return file_paths
+
+
+def normalize(x):
+    return (x - x.min()) / (x.max() - x.min())
 
 
 class AtemporalDataset(Dataset):
@@ -35,7 +40,7 @@ class AtemporalDataset(Dataset):
         super(AtemporalDataset, self).__init__()
         self.conf = conf
 
-        file_paths = recursive_file_paths(self.conf.default_dir)
+        file_paths = recursive_file_paths(self.conf.audio_dir)
         audio_list = do_multiprocess(self.load_audio_file, file_paths)
         del file_paths
 
@@ -50,9 +55,33 @@ class AtemporalDataset(Dataset):
         self.loudnesses = torch.from_numpy(np.concatenate(loudnesses))
         del spectra, pitches, confidences, loudnesses
 
+        one_hot = False
+
         # TODO: convert feature tensors into indices. Handle -inf pitches, normalize confidences and loudnesses.
+        if one_hot:
+            self.pitch_offset = torch.floor(self.pitches[self.pitches > -np.inf].min()) - 1
+            self.pitches -= self.pitch_offset
+            self.pitches[self.pitches == -np.inf] = 0.
+            self.pitches = self.pitches.round().type(torch.int64)
+            self.num_pitches = self.pitches.max() + 1
+
+            self.confidences = normalize(self.confidences) * (self.num_pitches - 1)
+            self.confidences = self.confidences.round().type(torch.int64)
+
+            self.loudnesses = normalize(self.loudnesses) * (self.num_pitches - 1)
+            self.loudnesses = self.loudnesses.round().type(torch.int64)
+        else:
+            self.pitch_offset = torch.floor(self.pitches[self.pitches > -np.inf].min())
+            self.pitches -= self.pitch_offset
+            self.pitches /= self.pitches.max()
+            self.pitches[self.pitches == -np.inf] = -1.
+
+            self.confidences = normalize(self.confidences)
+
+            self.loudnesses = normalize(self.loudnesses)
 
         self.maxima = self.spectra.max(0)[0]
+        self.spectra /= self.maxima
 
     def load_audio_file(self, path):
         audio, _ = librosa.load(path, sr=self.conf.sample_rate)
@@ -65,7 +94,7 @@ class AtemporalDataset(Dataset):
         return self.spectra.shape[0]
 
     def __getitem__(self, index):
-        return self.spectra[index] / self.maxima, \
+        return self.spectra[index], \
                self.pitches[index], \
                self.confidences[index], \
                self.loudnesses[index]

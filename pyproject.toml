@@ -14,6 +14,7 @@ ipykernel = "^5.1"
 ipywidgets = "^7.4"
 autopep8 = "^1.4"
 pyo = {git = "https://github.com/belangeo/pyo.git"}
+yapf = "^0.26.0"
 
 [tool.poetry.dev-dependencies]
 
