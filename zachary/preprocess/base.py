@@ -1,6 +1,12 @@
 from dataclasses import dataclass
+from functools import partial
 
 import librosa
+import numpy as np
+import torch
+from torch.utils.data import Dataset
+
+from zachary.preprocess.utils import recursive_file_paths, do_multiprocess, load_audio_file, spectrum_from_signal
 
 
 @dataclass(frozen=True)
@@ -55,3 +61,28 @@ class Configuration:
 
     def samples_to_frames(self, num_samples):
         return librosa.samples_to_frames(num_samples, hop_length=self.hop_length, n_fft=self.frame_length)
+
+
+class BaseDataset(Dataset):
+    def __init__(self, conf=Configuration()):
+        super(Dataset, self).__init__()
+        self.conf = conf
+
+        file_paths = recursive_file_paths(self.conf.audio_dir)
+        signals = do_multiprocess(partial(load_audio_file, conf=conf), file_paths)
+        del file_paths
+
+        spectra = do_multiprocess(partial(spectrum_from_signal, conf=conf), signals)
+        del signals
+
+        self.spectra = torch.from_numpy(np.concatenate(spectra, axis=0))
+        del spectra
+
+        self.maxima = self.spectra.max()
+        self.spectra /= self.maxima
+
+    def __len__(self):
+        raise NotImplementedError
+
+    def __getitem__(self, index):
+        raise NotImplementedError

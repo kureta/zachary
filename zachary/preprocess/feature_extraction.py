@@ -2,10 +2,8 @@ import essentia
 import essentia.standard as es
 import librosa
 
-from zachary.constants import Configuration
 
-
-def get_features_from_signal(audio, conf: Configuration):
+def get_features_from_signal(audio, conf):
     window = es.Windowing(type='hann')
     get_spectrum = es.Spectrum()
     get_melodia_pitches = es.PredominantPitchMelodia(maxFrequency=conf.max_hz, minFrequency=conf.min_hz,

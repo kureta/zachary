@@ -12,6 +12,6 @@ def initialize_model(model):
             except AttributeError:
                 pass
 
-        elif 'BatchNorm' in classname:
+        elif 'BatchNorm' in classname or 'InstanceNorm' in classname:
             nn.init.normal_(m.weight, mean=1.0, std=0.02)
             nn.init.normal_(m.bias, mean=0., std=0.001)
