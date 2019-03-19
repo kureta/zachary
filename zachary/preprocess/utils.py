@@ -13,8 +13,10 @@ def do_multiprocess(function, args_list, num_processes=8):
     return results
 
 
-def recursive_file_paths(directory):
-    supported_extensions = ['.mp3', '.wav', '.flac']
+def recursive_file_paths(directory, supported_extensions=None):
+    if supported_extensions is None:
+        supported_extensions = ['.mp3', '.wav', '.flac', '.ape']
+
     file_paths = []
     for dirname, dirnames, filenames in os.walk(directory):
         # print path to all filenames.

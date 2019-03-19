@@ -4,6 +4,7 @@ from functools import partial
 import librosa
 import numpy as np
 import torch
+from pretty_midi import PrettyMIDI
 from torch.utils.data import Dataset
 
 from zachary.preprocess.utils import recursive_file_paths, do_multiprocess, load_audio_file, spectrum_from_signal
@@ -17,7 +18,8 @@ class Configuration:
     lowest_note: str = 'e1'
     highest_note: str = 'a5'
     silence_threshold: float = 36.  # db
-    audio_dir: str = '/home/kureta/Music/chorales/'
+    audio_dir: str = '/home/kureta/Music/Palestrina - Missa Papæ Marcelli - Ensemble Officium, Wilfried Rombach/'
+    midi_dir: str = '/home/kureta/Music/midi/palestrina/'
 
     @property
     def max_hz(self):
@@ -75,11 +77,66 @@ class BaseDataset(Dataset):
         spectra = do_multiprocess(partial(spectrum_from_signal, conf=conf), signals)
         del signals
 
+        spectra = do_multiprocess(librosa.amplitude_to_db, spectra)
+
         self.spectra = torch.from_numpy(np.concatenate(spectra, axis=0))
         del spectra
 
-        self.maxima = self.spectra.max()
-        self.spectra /= self.maxima
+    def __len__(self):
+        raise NotImplementedError
+
+    def __getitem__(self, index):
+        raise NotImplementedError
+
+
+class Midi(PrettyMIDI):
+    def get_piano_roll(self, fs=100, times=None):
+        # If there are no instruments, return an empty array
+        if len(self.instruments) == 0:
+            return np.zeros((128, 0))
+
+        # Get piano rolls for each instrument
+        piano_rolls = [i.get_piano_roll(fs=fs, times=times)
+                       for i in self.instruments]
+        # Allocate piano roll,
+        # number of columns is max of # of columns in all piano rolls
+        piano_roll = np.zeros((128, np.max([p.shape[1] for p in piano_rolls])))
+        # Sum each piano roll into the aggregate piano roll
+        for roll in piano_rolls:
+            piano_roll[:, :roll.shape[1]] = np.maximum(piano_roll[:, :roll.shape[1]], roll)
+        return piano_roll
+
+
+def load_midi_file(path, conf):
+    midi = Midi(path)
+    return midi.get_piano_roll(
+        fs=librosa.time_to_frames(100, conf.sample_rate, conf.hop_length, conf.frame_length) / 100
+    )
+
+
+def trim_zeros(x):
+    # Trims only from the beginning.
+    s = np.sum(np.abs(x), axis=0)
+    first = (s != 0).argmax(axis=0)
+    return x[:, first:].T
+
+
+class BaseMidiDataset(Dataset):
+    def __init__(self, conf=Configuration()):
+        super(Dataset, self).__init__()
+        self.conf = conf
+
+        file_paths = recursive_file_paths(self.conf.midi_dir, supported_extensions=['.mid'])
+        matrices = do_multiprocess(partial(load_midi_file, conf=conf), file_paths)
+        del file_paths
+
+        trimmed = do_multiprocess(trim_zeros, matrices)
+        del matrices
+
+        self.midi = torch.from_numpy(np.concatenate(trimmed, axis=0).astype('float32'))
+        del trimmed
+
+        self.midi /= 127.
 
     def __len__(self):
         raise NotImplementedError
