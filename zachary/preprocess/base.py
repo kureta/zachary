@@ -77,10 +77,11 @@ class BaseDataset(Dataset):
         spectra = do_multiprocess(partial(spectrum_from_signal, conf=conf), signals)
         del signals
 
-        spectra = do_multiprocess(librosa.amplitude_to_db, spectra)
-
         self.spectra = torch.from_numpy(np.concatenate(spectra, axis=0))
         del spectra
+
+        self.maxima = self.spectra.max()
+        self.spectra /= self.maxima
 
     def __len__(self):
         raise NotImplementedError
